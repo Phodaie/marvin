@@ -74,7 +74,7 @@ class Prompt(BaseModel, abc.ABC):
         )
         """
         # when the right operand is a Prompt object
-        if isinstance(other, Prompt):
+        if isinstance(other, Prompt) or isinstance(other, Message):
             return PromptList([self, other])
         # when the right operand is a list
         elif isinstance(other, list):
@@ -95,7 +95,7 @@ class Prompt(BaseModel, abc.ABC):
         )
         """
         # when the left operand is a Prompt object
-        if isinstance(other, Prompt):
+        if isinstance(other, Prompt) or isinstance(other, Message):
             return PromptList([other, self])
         # when the left operand is a list
         elif isinstance(other, list):
