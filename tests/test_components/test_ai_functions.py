@@ -1,7 +1,7 @@
 import inspect
 
 import pytest
-from marvin import ai_fn
+from marvin.components.ai_function import ai_fn
 
 from tests.utils.mark import pytest_mark_class
 
@@ -36,11 +36,25 @@ class TestAIFunctions:
         result = await coro
         assert len(result) == 3
 
+    def test_list_fruit_with_generic_type_hints(self):
+        @ai_fn
+        def list_fruit(n: int) -> list[str]:
+            """Returns a list of `n` fruit"""
+
+        result = list_fruit(3)
+        assert len(result) == 3
+
 
 @pytest_mark_class("llm")
 class TestAIFunctionsMap:
     def test_map(self):
         result = list_fruit_color.map([2, 3])
+        assert len(result) == 2
+        assert len(result[0]) == 2
+        assert len(result[1]) == 3
+
+    async def test_amap(self):
+        result = await list_fruit_color.amap([2, 3])
         assert len(result) == 2
         assert len(result[0]) == 2
         assert len(result[1]) == 3
@@ -64,3 +78,7 @@ class TestAIFunctionsMap:
     def test_invalid_kwargs(self):
         with pytest.raises(TypeError):
             list_fruit_color.map([2, 3], color=None)
+
+    async def test_invalid_async_map(self):
+        with pytest.raises(TypeError, match="can't be used in 'await' expression"):
+            await list_fruit_color.map(n=[2], color=["orange", "red"])

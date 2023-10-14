@@ -1,22 +1,19 @@
 import copy
-from functools import partial
+import inspect
+import re
 from typing import Callable, Optional, Type
 
-from pydantic import BaseModel, validate_arguments
-from pydantic.decorator import (
-    ALT_V_ARGS,
-    ALT_V_KWARGS,
-    V_DUPLICATE_KWARGS,
-    V_POSITIONAL_ONLY_NAME,
-)
+from pydantic import BaseModel
+
+from marvin._compat import validate_arguments
 
 extraneous_fields = [
     "args",
     "kwargs",
-    ALT_V_ARGS,
-    ALT_V_KWARGS,
-    V_POSITIONAL_ONLY_NAME,
-    V_DUPLICATE_KWARGS,
+    "ALT_V_ARGS",
+    "ALT_V_KWARGS",
+    "V_POSITIONAL_ONLY_NAME",
+    "V_DUPLICATE_KWARGS",
 ]
 
 
@@ -54,31 +51,89 @@ class FunctionConfig(BaseModel):
         kwargs.setdefault("description", fn.__doc__ or "")
         super().__init__(fn=fn, **kwargs)
 
+    def getsource(self):
+        try:
+            return re.search("def.*", inspect.getsource(self.fn), re.DOTALL).group()
+        except Exception:
+            return None
+
+    def bind_arguments(self, *args, **kwargs):
+        bound_arguments = inspect.signature(self.fn).bind(*args, **kwargs)
+        bound_arguments.apply_defaults()
+        return bound_arguments.arguments
+
+    def response_model(self, *args, **kwargs):
+        def format_response(data: inspect.signature(self.fn).return_annotation):
+            """Function to format the final response to the user"""
+            return None
+
+        format_response.__name__ = kwargs.get("name", format_response.__name__)
+        format_response.__doc__ = kwargs.get("description", format_response.__doc__)
+        response_model = Function(format_response).model
+        response_model.__signature__ = inspect.signature(format_response)
+        return response_model
+
 
 class Function:
-    def __new__(cls, fn: Callable, **kwargs):
+    """
+    A wrapper class to add additional functionality to a function,
+    such as a schema, response model, and more.
+    """
+
+    def __new__(cls, fn: Callable, parameters: dict = None, signature=None, **kwargs):
         config = FunctionConfig(fn, **kwargs)
-        instance = validate_arguments(fn, config=config.dict())
-        instance.schema = instance.model.schema
-        instance.evaluate_raw = partial(cls.evaluate_raw, fn=instance)
-        instance.__name__ = config.name
-        instance.__doc__ = config.description
+        instance = super().__new__(cls)
+        instance.instance = validate_arguments(fn, config=config.dict())
+        instance.schema = parameters or instance.instance.model.schema
+        instance.response_model = config.response_model
+        instance.bind_arguments = config.bind_arguments
+        instance.getsource = config.getsource
+        instance.__name__ = config.name or fn.__name__
+        instance.__doc__ = config.description or fn.__doc__
+        instance.signature = signature or inspect.signature(fn)
         return instance
+
+    def __call__(self, *args, **kwargs):
+        return self.evaluate_raw(*args, **kwargs)
+
+    def evaluate_raw(self, *args, **kwargs):
+        return self.instance(*args, **kwargs)
 
     @classmethod
     def from_model(cls, model: Type[BaseModel], **kwargs):
-        instance = cls.__new__(
-            cls,
-            model,
-            **{
-                "name": "format_response",
-                "description": "Format the response",
-                **kwargs,
-            },
+        model.__signature__ = inspect.Signature(
+            list(model.__signature__.parameters.values()), return_annotation=model
         )
-        instance.__signature__ = model.__signature__
-        return instance
+
+        return cls(
+            model, name="format_response", description="Format the response", **kwargs
+        )
 
     @classmethod
-    def evaluate_raw(cls, args: str, /, *, fn: Callable, **kwargs):
-        return fn(**fn.model.parse_raw(args).dict(exclude_none=True))
+    def from_return_annotation(
+        cls, fn: Callable, *args, name: str = None, description: str = None
+    ):
+        def format_final_response(data: inspect.signature(fn).return_annotation):
+            """Function to format the final response to the user"""
+            return None
+
+        format_final_response.__name__ = name or format_final_response.__name__
+        format_final_response.__doc__ = description or format_final_response.__doc__
+        return cls(format_final_response)
+
+    def __repr__(self):
+        parameters = []
+        for _, param in self.signature.parameters.items():
+            param_repr = str(param)
+            if param.annotation is not param.empty:
+                param_repr = param_repr.replace(
+                    str(param.annotation),
+                    (
+                        param.annotation.__name__
+                        if isinstance(param.annotation, type)
+                        else str(param.annotation)
+                    ),
+                )
+            parameters.append(param_repr)
+        param_str = ", ".join(parameters)
+        return f"marvin.functions.{self.__name__}({param_str})"

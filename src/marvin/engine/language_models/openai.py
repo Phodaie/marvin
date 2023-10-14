@@ -1,6 +1,6 @@
 import inspect
 from logging import Logger
-from typing import Callable, Union
+from typing import Callable, Optional, Union
 
 import openai
 import openai.openai_object
@@ -26,12 +26,12 @@ CONTEXT_SIZES = {
 
 
 def openai_role_map(marvin_role: Role) -> str:
-    if marvin_role == Role.FUNCTION_RESPONSE:
+    if marvin_role == Role.FUNCTION_RESPONSE or marvin_role == "function_request":
         return "function"
-    elif marvin_role == Role.FUNCTION_REQUEST:
+    elif marvin_role == Role.FUNCTION_REQUEST or marvin_role == "function_response":
         return "assistant"
     else:
-        return marvin_role.value.lower()
+        return getattr(marvin_role, "value", marvin_role).lower()
 
 
 class OpenAIStreamHandler(StreamHandler):
@@ -48,7 +48,10 @@ class OpenAIStreamHandler(StreamHandler):
         async for r in api_response:
             response["llm_response"] = r.to_dict_recursive()
 
-            delta = r.choices[0].delta
+            delta = r.choices[0].delta if r.choices and r.choices[0] else None
+
+            if delta is None:
+                continue
 
             if "role" in delta:
                 response["role"] = delta.role
@@ -75,7 +78,7 @@ class OpenAIStreamHandler(StreamHandler):
 
 
 class OpenAIChatLLM(ChatLLM):
-    model: str = "gpt-3.5-turbo"
+    model: Optional[str] = "gpt-3.5-turbo"
 
     @property
     def context_size(self) -> int:

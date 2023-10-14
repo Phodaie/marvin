@@ -2,6 +2,19 @@
 
 Marvin introduces a number of components that can become the building blocks of AI-powered software.
 
+!!! tip "Selecting a backing LLM"
+    When using any of Marvin's components, the LLM used will default to the value of `MARVIN_LLM_MODEL`.
+    To override this on a per-call basis, pass the `model` argument to the component's decorator.
+
+    For example, to use `openai/gpt-3.5-turbo-16k` for an `ai_fn` call, you would do the following:
+
+    
+    ```python
+
+    @ai_fn(model="openai/gpt-3.5-turbo-16k", temperature = 0)
+    def my_ai_fn():
+        """..."""
+    ```
 
 ## AI Models
 
@@ -123,6 +136,7 @@ sentiment_list(
 ## AI Applications
 
 AI Applications are the base class for interactive use cases. They are designed to be invoked one or more times, and automatically maintain three forms of state:
+
 - `state`: a structured application state
 - `plan`: high-level planning for the AI assistant to keep the application "on-track" across multiple invocations
 - `history`: a history of all LLM interactions
